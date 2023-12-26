@@ -1,0 +1,11 @@
+{ 
+    "name": "mtglsp",
+    "version": "0.0.1",
+    "capabilities": {
+        "completionProvider": {
+            "triggerCharacter": [" "],
+            "allCommitCharacters": ["\n"]
+        },
+        "hoverProvider": true
+    }
+}
