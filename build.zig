@@ -1,5 +1,14 @@
 const std = @import("std");
 
+pub const BuildMode = enum {
+    /// Build static executable
+    static_exe,
+    /// Build dynamic executable and dynamic library
+    dynamic_exe,
+    /// Build dynamic library
+    hotreload,
+};
+
 // Although this function looks imperative, note that its job is to
 // declaratively construct a build graph that will be executed by an external
 // runner.
@@ -15,6 +24,14 @@ pub fn build(b: *std.Build) void {
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
 
+    const build_mode = b.option(BuildMode, "build_mode", "Can be static_exe, dynamic_exe or hotreload") orelse .static_exe;
+
+    const build_exe = (build_mode == .static_exe or build_mode == .dynamic_exe);
+    const build_lib = (build_mode == .hotreload or build_mode == .dynamic_exe);
+    const hotreload = build_lib;
+    var options = b.addOptions();
+    options.addOption(bool, "hotreload", hotreload);
+
     const exe = b.addExecutable(.{
         .name = "mtglsp",
         // In this case the main source file is merely a path, however, in more
@@ -23,11 +40,20 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-
+    exe.addOptions("build_options", options);
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
     // step when running `zig build`).
-    b.installArtifact(exe);
+    if (build_exe) b.installArtifact(exe);
+
+    const lib = b.addSharedLibrary(.{
+        .name = "hotreload",
+        .root_source_file = .{ .path = "src/requestHandler.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    lib.addOptions("build_options", options);
+    if (build_lib) b.installArtifact(lib);
 
     // This *creates* a Run step in the build graph, to be executed when another
     // step is evaluated that depends on it. The next line below will establish

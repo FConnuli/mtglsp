@@ -43,10 +43,15 @@ fn readFullMessage(
     }
 }
 
+pub export fn dynamicHandleConnection(conn: *const net.StreamServer.Connection) void {
+    handleConnection(conn) catch |err| {
+        std.log.err("connection {} exited with error: {}", .{ conn.address, err });
+    };
+}
 // read loop for an individual connection
-pub fn handleConnection(conn: net.StreamServer.Connection) !void {
+pub fn handleConnection(conn: *const net.StreamServer.Connection) !void {
     var buff: [10000]u8 = undefined;
-
+    std.log.info("Handler for connection at {} running", .{conn.address});
     while (conn.stream.read(&buff)) |size| {
         if (size == 0) break;
 
@@ -85,7 +90,7 @@ pub fn handleConnection(conn: net.StreamServer.Connection) !void {
         }
 
         if (std.mem.eql(u8, request.value.method, "textDocument/hover")) {
-            const hello = "{\"contents\":\"Hello World!\n![some card](https://cards.scryfall.io/normal/front/5/6/565b2a40-57b1-451f-8c2a-e02222502288.jpg?1562608891)\n\"}";
+            const hello = "{\"contents\":\"Hello World !!!\n![some card](https://cards.scryfall.io/normal/front/5/6/565b2a40-57b1-451f-8c2a-e02222502288.jpg?1562608891)\n\"}";
             _ = try std.fmt.format(
                 conn.stream.writer(),
                 length_header ++ result_wrapper,
