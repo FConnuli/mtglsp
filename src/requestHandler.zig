@@ -2,27 +2,25 @@ const std = @import("std");
 const net = std.net;
 const JSON = std.json;
 
+const jsonRpc = @import("jsonRpc.zig");
+
+const hover = @import("hover.zig");
+
+const scryfall = @import("scryfallClient.zig");
+
 var general_purpose_allocator = std.heap.GeneralPurposeAllocator(.{}){};
 const gpa = general_purpose_allocator.allocator();
 
-const length_header = "Content-Length: {d}\r\n\r\n";
+const initalize_response = @import("initalizeResult.zig").value;
+var scryfall_client: scryfall.Client = undefined;
 
-const result_wrapper = "{{\"jsonrpc\":\"2.0\",\"id\":{d},\"result\":{s}}}";
-
-const result_wrapper_len = result_wrapper.len - 2 - 3 - 3;
-
-const initalize_response = @embedFile("initializeResult.json");
+const ParamError = error{MissingParams};
 
 const Request = struct {
     id: u64 = 0,
     method: []const u8,
     params: JSON.Value = undefined,
 };
-
-fn countDigits(comptime T: type, num: T, base: T) T {
-    if (num < base) return 1;
-    return 1 + countDigits(T, num / base, base);
-}
 
 fn readFullMessage(
     stream: net.Stream,
@@ -44,6 +42,7 @@ fn readFullMessage(
 }
 
 pub export fn dynamicHandleConnection(conn: *const net.StreamServer.Connection) void {
+    std.log.info("Handler for connection at {} running in dynamicHandleConnection", .{conn.address});
     handleConnection(conn) catch |err| {
         std.log.err("connection {} exited with error: {}", .{ conn.address, err });
     };
@@ -51,8 +50,15 @@ pub export fn dynamicHandleConnection(conn: *const net.StreamServer.Connection) 
 // read loop for an individual connection
 pub fn handleConnection(conn: *const net.StreamServer.Connection) !void {
     var buff: [10000]u8 = undefined;
+    scryfall_client = scryfall.Client.init(gpa);
+    defer scryfall_client.client.deinit();
     std.log.info("Handler for connection at {} running", .{conn.address});
     while (conn.stream.read(&buff)) |size| {
+        var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        defer arena.deinit();
+
+        const allocator = arena.allocator();
+
         if (size == 0) break;
 
         var items = std.mem.tokenizeSequence(u8, &buff, "\r\n");
@@ -69,7 +75,7 @@ pub fn handleConnection(conn: *const net.StreamServer.Connection) !void {
 
         const request = try JSON.parseFromSlice(
             Request,
-            gpa,
+            allocator,
             json_string,
             .{ .ignore_unknown_fields = true },
         );
@@ -78,36 +84,23 @@ pub fn handleConnection(conn: *const net.StreamServer.Connection) !void {
         std.log.info("request: {s}", .{request.value.method});
 
         if (std.mem.eql(u8, request.value.method, "initialize")) {
-            _ = try std.fmt.format(
+            try jsonRpc.writeJsonRpc(
                 conn.stream.writer(),
-                length_header ++ result_wrapper,
-                .{
-                    initalize_response.len + result_wrapper_len + 1,
-                    request.value.id,
-                    initalize_response,
-                },
+                initalize_response,
+                request.value.id,
             );
         }
 
         if (std.mem.eql(u8, request.value.method, "textDocument/hover")) {
-            const hello = "{\"contents\":\"Hello World !!!\n![some card](https://cards.scryfall.io/normal/front/5/6/565b2a40-57b1-451f-8c2a-e02222502288.jpg?1562608891)\n\"}";
-            _ = try std.fmt.format(
+            //const hello = "{\"contents\":\"Hello World !!!\n![some card](https://cards.scryfall.io/normal/front/5/6/565b2a40-57b1-451f-8c2a-e02222502288.jpg?1562608891)\n\"}";
+            try hover.serve(
                 conn.stream.writer(),
-                length_header ++ result_wrapper,
-                .{
-                    hello.len + result_wrapper_len + countDigits(u64, request.value.id, 10),
-                    request.value.id,
-                    hello,
-                },
+                request.value.params,
+                &scryfall_client,
+                request.value.id,
+                allocator,
             );
-            std.log.info(
-                length_header ++ result_wrapper,
-                .{
-                    hello.len + result_wrapper_len + countDigits(u64, request.value.id, 10),
-                    request.value.id,
-                    hello,
-                },
-            );
+            //try jsonRpc.writeJsonRpc(conn.stream.writer(), hello, request.value.id);
         }
     } else |err| {
         return err;
