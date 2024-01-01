@@ -43,8 +43,9 @@ pub fn serve(
     var card_text_render = std.ArrayList(u8).init(allocator);
     defer card_text_render.deinit();
 
-    try writeCard(card_text_render.writer(), card.data);
+    try writeCard(card_text_render.writer(), card);
 
+    //try jsonRpc.writeJsonRpc(writer, .{ .contents = "test" }, request_id);
     try jsonRpc.writeJsonRpc(writer, .{ .contents = card_text_render.items }, request_id);
 }
 
@@ -61,35 +62,73 @@ fn parseCardName(line: u64, file: fs.File, allocator: std.mem.Allocator) !std.Ar
         } else if (n == line) {
             if (i == 0) {
                 if (std.ascii.isDigit(char[0])) wasNum = true;
-            } else {
-                if (std.ascii.isDigit(char[0]) and wasNum) {} else if (char[0] == ' ') {
-                    if (wasNum) {
-                        wasNum = false;
-                    }
-                    try char_list.append('-');
-                } else {
-                    if (wasNum) return error.syntaxError;
-                    try char_list.append(char[0]);
-                }
             }
+            if (std.ascii.isDigit(char[0]) and wasNum) {} else if (char[0] == ' ') {
+                if (wasNum) {
+                    wasNum = false;
+                }
+                try char_list.append('-');
+            } else {
+                if (wasNum) return error.syntaxError;
+                try char_list.append(char[0]);
+            }
+
             i += 1;
         }
     }
     return char_list;
 }
 
-fn writeCard(writer: anytype, card: *const scryfall.CardData) !void {
+fn writeCard(writer: anytype, card_data: scryfall.CardData) !void {
+    switch (card_data) {
+        .single_faced_card => |card| {
+            try writeCardFace(writer, card);
+        },
+        .double_faced_card => |card| {
+            for (card.card_faces, 0..) |face, i| {
+                if (i != 0) _ = try writer.write("\n");
+                try writeCardFace(writer, face);
+            }
+        },
+    }
+}
+
+fn writeCardFace(writer: anytype, card: scryfall.CardFace) !void {
+    const line_length: usize = card.name.len + @max(23, card.mana_cost.len + 3);
+    formatText(card.oracle_text, line_length);
     _ = try std.fmt.format(writer,
-        \\{s}{s: >20}
+        \\# {s} {s: >20} 
         \\
         \\   
         \\{s}
         \\
         \\{s}
         \\
-        \\
-        \\{?d}/{?d}
-    , .{
-        card.name, card.mana_cost, card.type_line, card.oracle_text, card.power, card.toughness,
-    });
+    , .{ card.name, card.mana_cost, card.type_line, card.oracle_text });
+    if (card.power != null and card.toughness != null) {
+        _ = try std.fmt.format(writer,
+            \\
+            \\{s}/{s}
+            \\
+        , .{ card.power.?, card.toughness.? });
+    }
+}
+
+fn formatText(buffer: []u8, line_length: usize) void {
+    var last_space: usize = 0;
+    var cur_line_length: usize = 0;
+    for (buffer, 0..) |char, i| {
+        if (char == ' ') {
+            last_space = i;
+        }
+        if (char == '\n') {
+            cur_line_length = 0;
+            continue;
+        }
+        cur_line_length += 1;
+        if (cur_line_length >= line_length) {
+            buffer[last_space] = '\n';
+            cur_line_length = i - last_space;
+        }
+    }
 }

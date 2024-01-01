@@ -93,13 +93,16 @@ pub fn handleConnection(conn: *const net.StreamServer.Connection) !void {
 
         if (std.mem.eql(u8, request.value.method, "textDocument/hover")) {
             //const hello = "{\"contents\":\"Hello World !!!\n![some card](https://cards.scryfall.io/normal/front/5/6/565b2a40-57b1-451f-8c2a-e02222502288.jpg?1562608891)\n\"}";
-            try hover.serve(
+            hover.serve(
                 conn.stream.writer(),
                 request.value.params,
                 &scryfall_client,
                 request.value.id,
                 allocator,
-            );
+            ) catch |err| {
+                std.log.err("hover at {} failed with error: {}", .{ conn.address, err });
+            };
+
             //try jsonRpc.writeJsonRpc(conn.stream.writer(), hello, request.value.id);
         }
     } else |err| {

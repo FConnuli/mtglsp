@@ -4,13 +4,33 @@ const json = std.json;
 
 const url = "https://api.scryfall.com/";
 
-pub const CardData = struct {
+pub const CardFace = struct {
     name: []const u8,
-    oracle_text: []const u8,
+    oracle_text: []u8,
     mana_cost: []const u8,
-    power: ?u16 = null,
-    toughness: ?u16 = null,
+    power: ?([]const u8) = null,
+    toughness: ?([]const u8) = null,
     type_line: []const u8,
+};
+
+/// We represent power and toughness as either a string or a number because
+/// of cards like termogoyf.
+pub const PowTough = union(enum) {
+    num: u16,
+    str: []const u8,
+};
+
+//pub const DoubleFacedCard = struct { card_faces: struct {
+//    @"0": CardFace,
+//    @"1": CardFace,
+//} };
+pub const DoubleFacedCard = struct {
+    card_faces: []const CardFace,
+};
+
+pub const CardData = union(enum) {
+    single_faced_card: CardFace,
+    double_faced_card: DoubleFacedCard,
 };
 
 pub const Card = struct {
@@ -32,7 +52,7 @@ pub const Client = struct {
         return Client{ .client = http.Client{ .allocator = allocator } };
     }
 
-    pub fn getCard(self: *@This(), card_name: []const u8, arena: std.mem.Allocator) !*const Card {
+    pub fn getCard(self: *@This(), card_name: []const u8, arena: std.mem.Allocator) !CardData {
         var full_url = std.ArrayList(u8).init(arena);
         defer full_url.deinit();
         try std.fmt.format(full_url.writer(), url ++ "cards/named?exact={s}", .{card_name});
@@ -45,29 +65,41 @@ pub const Client = struct {
         // Accept anything.
         try headers.append("accept", "*/*");
 
-        var request = try self.client.request(.GET, uri, headers, .{});
+        var request = try self.client.open(.GET, uri, headers, .{});
         defer request.deinit();
 
-        try request.start();
+        try request.send(.{}); //  start();
 
         try request.wait();
 
         const body = request.reader().readAllAlloc(arena, 8192) catch unreachable;
 
+        //std.log.info("{s}", .{body});
+
         //std.log.info("scryfall card name: {s}", .{card_obj.value.name});
 
-        const card_obj = try json.parseFromSlice(
-            CardData,
+        const single_faced_card_obj = json.parseFromSlice(
+            CardFace,
             arena,
             body,
             .{ .ignore_unknown_fields = true },
         );
-        std.log.info("scryfall card name: {s}", .{card_obj.value.name});
-        return &Card{
-            .data = &card_obj.value,
-            .parsed_json = card_obj,
-            .raw_json = body,
-            .allocator = arena,
-        };
+        if (single_faced_card_obj) |card| {
+            std.log.info("scryfall card name: {s}", .{card.value.name});
+            return CardData{ .single_faced_card = card.value };
+        } else |err| {
+            if (err == error.MissingField) {
+                const double_faced_card_obj = try json.parseFromSlice(
+                    DoubleFacedCard,
+                    arena,
+                    body,
+                    .{ .ignore_unknown_fields = true },
+                );
+                std.log.info("scryfall card name: {s}", .{double_faced_card_obj.value.card_faces[0].name});
+                return CardData{ .double_faced_card = double_faced_card_obj.value };
+            }
+            std.log.info("likely not a card", .{});
+            return err;
+        }
     }
 };
