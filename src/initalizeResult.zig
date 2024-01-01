@@ -7,5 +7,10 @@ pub const value = .{
             .allCommitCharacters = [_][]const u8{"\n"},
         },
         .hoverProvider = true,
+        .textDocumentSync = .{
+            .openClose = true,
+
+            .change = 1,
+        },
     },
 };

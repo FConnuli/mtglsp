@@ -4,6 +4,8 @@ const JSON = std.json;
 
 const jsonRpc = @import("jsonRpc.zig");
 
+const documentSync = @import("documentSync.zig");
+
 const hover = @import("hover.zig");
 
 const scryfall = @import("scryfallClient.zig");
@@ -52,6 +54,9 @@ pub fn handleConnection(conn: *const net.StreamServer.Connection) !void {
     var buff: [10000]u8 = undefined;
     scryfall_client = scryfall.Client.init(gpa);
     defer scryfall_client.client.deinit();
+
+    var documentMap: std.StringHashMap([]const u8) =
+        std.StringHashMap([]const u8).init(gpa);
     std.log.info("Handler for connection at {} running", .{conn.address});
     while (conn.stream.read(&buff)) |size| {
         var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -89,21 +94,23 @@ pub fn handleConnection(conn: *const net.StreamServer.Connection) !void {
                 initalize_response,
                 request.value.id,
             );
-        }
-
-        if (std.mem.eql(u8, request.value.method, "textDocument/hover")) {
-            //const hello = "{\"contents\":\"Hello World !!!\n![some card](https://cards.scryfall.io/normal/front/5/6/565b2a40-57b1-451f-8c2a-e02222502288.jpg?1562608891)\n\"}";
+        } else if (std.mem.eql(u8, request.value.method, "textDocument/hover")) {
             hover.serve(
                 conn.stream.writer(),
                 request.value.params,
+                &documentMap,
                 &scryfall_client,
                 request.value.id,
                 allocator,
             ) catch |err| {
                 std.log.err("hover at {} failed with error: {}", .{ conn.address, err });
             };
-
-            //try jsonRpc.writeJsonRpc(conn.stream.writer(), hello, request.value.id);
+        } else if (std.mem.eql(u8, request.value.method, "textDocument/didOpen") or std.mem.eql(u8, request.value.method, "textDocument/didChange")) {
+            try documentSync.sync(
+                &documentMap,
+                request.value.params,
+                gpa,
+            );
         }
     } else |err| {
         return err;
