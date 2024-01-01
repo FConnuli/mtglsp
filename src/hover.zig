@@ -27,19 +27,14 @@ pub fn serve(
     );
     defer params_parsed.deinit();
 
-    //const file_name = params_parsed.value.textDocument.uri[7..];
-
-    //const file = try fs.openFileAbsolute(file_name, .{});
-    //defer file.close();
-
     const card_name = try parseCardName(
         params_parsed.value.position.line,
         documentMap.get(params_parsed.value.textDocument.uri).?,
-        allocator,
     );
-    defer card_name.deinit();
+    std.log.info("parsed card name: {s}", .{card_name});
+    //defer card_name.deinit();
 
-    const card = try scry.getCard(card_name.items, allocator);
+    const card = try scry.getCard(card_name, allocator);
 
     var card_text_render = std.ArrayList(u8).init(allocator);
     defer card_text_render.deinit();
@@ -50,13 +45,14 @@ pub fn serve(
     try jsonRpc.writeJsonRpc(writer, .{ .contents = card_text_render.items }, request_id);
 }
 
-fn parseCardName(line: u64, buf: []const u8, allocator: std.mem.Allocator) !std.ArrayList(u8) {
+fn parseCardName(line: u64, buf: []const u8) ![]const u8 {
     var n: u64 = 0;
     var i: u64 = 0;
+    var len: usize = 0;
     var index: usize = 0;
     var char: [1]u8 = undefined;
     var wasNum: bool = false;
-    var char_list = std.ArrayList(u8).init(allocator);
+    var char_list = buf;
     while (n <= line) : (index += 1) {
         char[0] = buf[index];
         if (char[0] == '\n') {
@@ -69,16 +65,18 @@ fn parseCardName(line: u64, buf: []const u8, allocator: std.mem.Allocator) !std.
                 if (wasNum) {
                     wasNum = false;
                 }
-                try char_list.append('-');
+                len += 1;
+                //try char_list.append('-');
             } else {
                 if (wasNum) return error.syntaxError;
-                try char_list.append(char[0]);
+                len += 1;
+                //try char_list.append(char[0]);
             }
 
             i += 1;
         }
     }
-    return char_list;
+    return char_list[(index - len)..index];
 }
 
 fn writeCard(writer: anytype, card_data: scryfall.CardData) !void {
