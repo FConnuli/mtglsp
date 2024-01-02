@@ -27,7 +27,7 @@ const Request = struct {
 };
 
 fn readFullMessage(
-    stream: net.Stream,
+    stream: anytype,
     buffer: []u8,
     cur_size: usize,
     full_size: usize,
@@ -46,21 +46,22 @@ fn readFullMessage(
 }
 
 pub export fn dynamicHandleConnection(conn: *const net.StreamServer.Connection) void {
+    defer conn.stream.close();
     std.log.info("Handler for connection at {} running in dynamicHandleConnection", .{conn.address});
-    handleConnection(conn) catch |err| {
-        std.log.err("connection {} exited with error: {}", .{ conn.address, err });
+    handleConnection(conn.stream.writer(), conn.stream.reader(), conn.address) catch |err| {
+        std.log.err("connection {any} exited with error: {}", .{ conn.address, err });
     };
 }
 // read loop for an individual connection
-pub fn handleConnection(conn: *const net.StreamServer.Connection) !void {
+pub fn handleConnection(writer: anytype, reader: anytype, address: anytype) !void {
     var buff: [10000]u8 = undefined;
     scryfall_client = scryfall.Client.init(gpa);
     defer scryfall_client.client.deinit();
 
     var documentMap: std.StringHashMap([]const u8) =
         std.StringHashMap([]const u8).init(gpa);
-    std.log.info("Handler for connection at {} running", .{conn.address});
-    while (conn.stream.read(&buff)) |size| {
+    std.log.info("Handler for connection at {any} running", .{address});
+    while (reader.read(&buff)) |size| {
         var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
         defer arena.deinit();
 
@@ -74,7 +75,7 @@ pub fn handleConnection(conn: *const net.StreamServer.Connection) !void {
         const header_size = size_string.len + 4;
         const full_size = json_size + header_size;
 
-        try readFullMessage(conn.stream, &buff, size, full_size);
+        try readFullMessage(reader, &buff, size, full_size);
 
         const json_string = items.next().?[0..json_size];
 
@@ -92,20 +93,20 @@ pub fn handleConnection(conn: *const net.StreamServer.Connection) !void {
 
         if (std.mem.eql(u8, request.value.method, "initialize")) {
             try jsonRpc.writeJsonRpc(
-                conn.stream.writer(),
+                writer,
                 initalize_response,
                 request.value.id,
             );
         } else if (std.mem.eql(u8, request.value.method, "textDocument/hover")) {
             hover.serve(
-                conn.stream.writer(),
+                writer,
                 request.value.params,
                 &documentMap,
                 &scryfall_client,
                 request.value.id,
                 allocator,
             ) catch |err| {
-                std.log.err("hover at {} failed with error: {}", .{ conn.address, err });
+                std.log.err("hover at {any} failed with error: {}", .{ address, err });
             };
         } else if (std.mem.eql(u8, request.value.method, "textDocument/didOpen") or std.mem.eql(u8, request.value.method, "textDocument/didChange")) {
             try documentSync.sync(
@@ -115,7 +116,7 @@ pub fn handleConnection(conn: *const net.StreamServer.Connection) !void {
             );
         } else if (std.mem.eql(u8, request.value.method, "textDocument/completion")) {
             completion.serve(
-                conn.stream.writer(),
+                writer,
                 request.value.params,
                 &documentMap,
                 &scryfall_client,
@@ -124,21 +125,20 @@ pub fn handleConnection(conn: *const net.StreamServer.Connection) !void {
             ) catch |err| {
                 const empty: [][]const u8 = &.{};
                 try jsonRpc.writeJsonRpc(
-                    conn.stream.writer(),
+                    writer,
                     .{
                         .isIncomplete = true,
                         .items = empty,
                     },
                     request.value.id,
                 );
-                std.log.err("hover at {} failed with error: {}", .{ conn.address, err });
+                std.log.err("hover at {any} failed with error: {}", .{ address, err });
             };
         }
     } else |err| {
         return err;
     }
-    std.log.info("Closing connection: {}", .{conn.address});
-    conn.stream.close();
+    std.log.info("Closing connection: {any}", .{address});
 }
 
 test "simple test" {

@@ -30,7 +30,7 @@ pub fn parseCardNameFromLine(buf: []const u8) ![]const u8 {
 }
 
 pub fn getLine(line: usize, buf: []const u8) ?[]const u8 {
-    var line_generator = std.mem.tokenizeAny(u8, buf, "\n");
+    var line_generator = std.mem.splitAny(u8, buf, "\n");
     var cur_line: ?[]const u8 = line_generator.next();
     for (0..line) |_| {
         cur_line = line_generator.next();

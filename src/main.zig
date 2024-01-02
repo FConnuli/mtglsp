@@ -20,23 +20,42 @@ const FILES_TO_COPY = [_]CopyFile{
     .{ .src = LIB_SRC_DIR ++ "/libhotreload.so", .dst = LIB_DEST_DIR ++ "/libhotreload.so" },
 };
 
+var general_purpose_allocator = std.heap.GeneralPurposeAllocator(.{}){};
+const gpa = general_purpose_allocator.allocator();
+
 pub fn main() !void {
     if (HOTRELOAD) try reloadLibrary(false);
 
-    const self_addr = try net.Address.resolveIp("127.0.0.1", 6005);
+    var args = try std.process.argsWithAllocator(gpa);
+    defer args.deinit();
+    _ = args.next();
+    const arg1 = args.next();
+    std.log.info("{?s}", .{arg1});
 
-    var listener = net.StreamServer.init(.{});
-    try listener.listen(self_addr);
-    defer listener.deinit();
+    if (arg1 != null and
+        std.mem.orderZ(u8, arg1.?, "--network") == std.math.Order.eq)
+    {
+        const self_addr = try net.Address.resolveIp("127.0.0.1", 6005);
 
-    std.log.info("Listening on {}; press Ctrl-C to exit...", .{self_addr});
+        var listener = net.StreamServer.init(.{});
+        try listener.listen(self_addr);
+        defer listener.deinit();
 
-    while (listener.accept()) |conn| {
-        std.log.info("Accepted Connection from: {}", .{conn.address});
-        handleConnection(&conn);
-        if (HOTRELOAD) try reloadLibrary(true);
-    } else |err| {
-        std.log.info("Connection rejected from error: {}", .{err});
+        std.log.info("Listening on {}; press Ctrl-C to exit...", .{self_addr});
+
+        while (listener.accept()) |conn| {
+            std.log.info("Accepted Connection from: {}", .{conn.address});
+            handleConnection(&conn);
+            if (HOTRELOAD) try reloadLibrary(true);
+        } else |err| {
+            std.log.info("Connection rejected from error: {}", .{err});
+        }
+    } else {
+        try RequestHandler.handleConnection(
+            std.io.getStdOut().writer(),
+            std.io.getStdIn().reader(),
+            "",
+        );
     }
 }
 
