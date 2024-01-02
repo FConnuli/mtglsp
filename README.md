@@ -1,7 +1,5 @@
 # mtglsp
 
-!!WIP!!
-
 language server to allow for convenient Magic: The Gathering deckbuilding in plaintext.
 
 uses scryfall to source data
