@@ -6,6 +6,8 @@ const jsonRpc = @import("jsonRpc.zig");
 
 const scryfall = @import("scryfallClient.zig");
 
+const parse = @import("parse.zig");
+
 const Params = struct {
     position: struct { line: u64 },
     textDocument: struct { uri: []const u8 },
@@ -27,9 +29,11 @@ pub fn serve(
     );
     defer params_parsed.deinit();
 
-    const card_name = try parseCardName(
-        params_parsed.value.position.line,
-        documentMap.get(params_parsed.value.textDocument.uri).?,
+    const card_name = try parse.parseCardNameFromLine(
+        parse.getLine(
+            params_parsed.value.position.line,
+            documentMap.get(params_parsed.value.textDocument.uri).?,
+        ).?,
     );
     std.log.info("parsed card name: {s}", .{card_name});
     //defer card_name.deinit();
@@ -43,40 +47,6 @@ pub fn serve(
 
     //try jsonRpc.writeJsonRpc(writer, .{ .contents = "test" }, request_id);
     try jsonRpc.writeJsonRpc(writer, .{ .contents = card_text_render.items }, request_id);
-}
-
-fn parseCardName(line: u64, buf: []const u8) ![]const u8 {
-    var n: u64 = 0;
-    var i: u64 = 0;
-    var len: usize = 0;
-    var index: usize = 0;
-    var char: [1]u8 = undefined;
-    var wasNum: bool = false;
-    var char_list = buf;
-    while (n <= line) : (index += 1) {
-        char[0] = buf[index];
-        if (char[0] == '\n') {
-            n += 1;
-        } else if (n == line) {
-            if (i == 0) {
-                if (std.ascii.isDigit(char[0])) wasNum = true;
-            }
-            if (std.ascii.isDigit(char[0]) and wasNum) {} else if (char[0] == ' ') {
-                if (wasNum) {
-                    wasNum = false;
-                }
-                len += 1;
-                //try char_list.append('-');
-            } else {
-                if (wasNum) return error.syntaxError;
-                len += 1;
-                //try char_list.append(char[0]);
-            }
-
-            i += 1;
-        }
-    }
-    return char_list[(index - len)..index];
 }
 
 fn writeCard(writer: anytype, card_data: scryfall.CardData) !void {

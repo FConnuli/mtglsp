@@ -8,6 +8,8 @@ const documentSync = @import("documentSync.zig");
 
 const hover = @import("hover.zig");
 
+const completion = @import("completion.zig");
+
 const scryfall = @import("scryfallClient.zig");
 
 var general_purpose_allocator = std.heap.GeneralPurposeAllocator(.{}){};
@@ -111,6 +113,26 @@ pub fn handleConnection(conn: *const net.StreamServer.Connection) !void {
                 request.value.params,
                 gpa,
             );
+        } else if (std.mem.eql(u8, request.value.method, "textDocument/completion")) {
+            completion.serve(
+                conn.stream.writer(),
+                request.value.params,
+                &documentMap,
+                &scryfall_client,
+                request.value.id,
+                allocator,
+            ) catch |err| {
+                const empty: [][]const u8 = &.{};
+                try jsonRpc.writeJsonRpc(
+                    conn.stream.writer(),
+                    .{
+                        .isIncomplete = true,
+                        .items = empty,
+                    },
+                    request.value.id,
+                );
+                std.log.err("hover at {} failed with error: {}", .{ conn.address, err });
+            };
         }
     } else |err| {
         return err;

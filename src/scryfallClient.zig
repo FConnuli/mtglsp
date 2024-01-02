@@ -13,13 +13,6 @@ pub const CardFace = struct {
     type_line: []const u8,
 };
 
-/// We represent power and toughness as either a string or a number because
-/// of cards like termogoyf.
-pub const PowTough = union(enum) {
-    num: u16,
-    str: []const u8,
-};
-
 //pub const DoubleFacedCard = struct { card_faces: struct {
 //    @"0": CardFace,
 //    @"1": CardFace,
@@ -43,6 +36,10 @@ pub const Card = struct {
         //self.parsed_json.deinit();
         //self.allocator.free(self.raw_json); //TODO figure out a way to do this outside of the function scope
     }
+};
+
+const Completion = struct {
+    data: [][]const u8,
 };
 
 pub const Client = struct {
@@ -84,6 +81,7 @@ pub const Client = struct {
             body,
             .{ .ignore_unknown_fields = true },
         );
+        std.time.sleep(100000);
         if (single_faced_card_obj) |card| {
             std.log.info("scryfall card name: {s}", .{card.value.name});
             return CardData{ .single_faced_card = card.value };
@@ -101,5 +99,45 @@ pub const Client = struct {
             std.log.info("likely not a card", .{});
             return err;
         }
+    }
+
+    pub fn getCompletion(self: *@This(), card_name: []const u8, arena: std.mem.Allocator) ![][]const u8 {
+        var full_url = std.ArrayList(u8).init(arena);
+        defer full_url.deinit();
+        try std.fmt.format(
+            full_url.writer(),
+            url ++ "cards/autocomplete?q={s}",
+            .{card_name},
+        );
+        const uri = std.Uri.parse(full_url.items) catch unreachable;
+
+        // Create the headers that will be sent to the server.
+        var headers = std.http.Headers{ .allocator = arena };
+        defer headers.deinit();
+
+        // Accept anything.
+        try headers.append("accept", "*/*");
+
+        var request = try self.client.open(.GET, uri, headers, .{});
+        defer request.deinit();
+
+        try request.send(.{}); //  start();
+
+        try request.wait();
+
+        const body = request.reader().readAllAlloc(arena, 8192) catch unreachable;
+
+        //std.log.info("{s}", .{body});
+
+        //std.log.info("scryfall card name: {s}", .{card_obj.value.name});
+
+        const complete = try json.parseFromSlice(
+            Completion,
+            arena,
+            body,
+            .{ .ignore_unknown_fields = true },
+        );
+        std.time.sleep(100000);
+        return complete.value.data;
     }
 };
