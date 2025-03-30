@@ -3,6 +3,7 @@ const http = std.http;
 const json = std.json;
 
 const url = "https://api.scryfall.com/";
+//const url = "https://www.wikipedia.org/";
 
 pub const CardFace = struct {
     name: []const u8,
@@ -55,21 +56,20 @@ pub const Client = struct {
         try std.fmt.format(full_url.writer(), url ++ "cards/named?exact={s}", .{card_name});
         const uri = std.Uri.parse(full_url.items) catch unreachable;
 
-        // Create the headers that will be sent to the server.
-        var headers = std.http.Headers{ .allocator = arena };
-        defer headers.deinit();
+        const buf = try arena.alloc(u8, 1024 * 1024 * 4);
 
-        // Accept anything.
-        try headers.append("accept", "*/*");
-
-        var request = try self.client.open(.GET, uri, headers, .{});
+        var request = try self.client.open(.GET, uri, .{ .server_header_buffer = buf, .version = .@"HTTP/1.1", .keep_alive = false });
         defer request.deinit();
 
-        try request.send(.{}); //  start();
+        try request.send();
 
+        std.log.info("STARTING TO WAIT", .{});
         try request.wait();
+        std.log.info("STOPPING TO WAIT", .{});
 
         const body = request.reader().readAllAlloc(arena, 8192) catch unreachable;
+
+        std.log.info("{s}", .{body});
 
         //std.log.info("{s}", .{body});
 
@@ -112,16 +112,18 @@ pub const Client = struct {
         const uri = std.Uri.parse(full_url.items) catch unreachable;
 
         // Create the headers that will be sent to the server.
-        var headers = std.http.Headers{ .allocator = arena };
-        defer headers.deinit();
+        //var headers = std.http.Headers{ .allocator = arena };
+        //defer headers.deinit();
 
         // Accept anything.
-        try headers.append("accept", "*/*");
+        //try headers.append("accept", "*/*");
 
-        var request = try self.client.open(.GET, uri, headers, .{});
+        const buf = try arena.alloc(u8, 1024 * 1024 * 4);
+
+        var request = try self.client.open(.GET, uri, .{ .server_header_buffer = buf, .version = .@"HTTP/1.1" });
         defer request.deinit();
 
-        try request.send(.{}); //  start();
+        try request.send(); //  start();
 
         try request.wait();
 

@@ -36,9 +36,10 @@ pub fn main() !void {
         std.mem.orderZ(u8, arg1.?, "--network") == std.math.Order.eq)
     {
         const self_addr = try net.Address.resolveIp("127.0.0.1", 6005);
-
-        var listener = net.StreamServer.init(.{});
-        try listener.listen(self_addr);
+        //const localhost = net.Address{ .in = loopback };
+        //        var listener = net.StreamServer.init(.{});
+        var listener = try self_addr.listen(.{ .reuse_port = true });
+        //try listener.listen(self_addr);
         defer listener.deinit();
 
         std.log.info("Listening on {}; press Ctrl-C to exit...", .{self_addr});
@@ -71,7 +72,7 @@ fn reloadLibrary(close_dll: bool) !void {
     dynamicHandleConnection = dll_file.lookup(*Handler_t, "dynamicHandleConnection").?;
 }
 
-fn handleConnection(conn: *const net.StreamServer.Connection) void {
+fn handleConnection(conn: *const net.Server.Connection) void {
     if (HOTRELOAD) {
         std.log.info("Dynamically starting connection handler with function at {}", .{dynamicHandleConnection});
         (dynamicHandleConnection)(conn);

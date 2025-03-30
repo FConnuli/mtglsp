@@ -45,7 +45,7 @@ fn readFullMessage(
     }
 }
 
-pub export fn dynamicHandleConnection(conn: *const net.StreamServer.Connection) void {
+pub export fn dynamicHandleConnection(conn: *const net.Server.Connection) void {
     defer conn.stream.close();
     std.log.info("Handler for connection at {} running in dynamicHandleConnection", .{conn.address});
     handleConnection(conn.stream.writer(), conn.stream.reader(), conn.address) catch |err| {

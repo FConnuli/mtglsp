@@ -22,7 +22,7 @@ uses scryfall to source data
 
 # Install:
 
-This project will build correctly with zig 0.12.0-dev.1861+412999621
+This project will build correctly with zig 0.13
 
 to install, download this repo, run `zig build`, then add the binary to your path.
 
